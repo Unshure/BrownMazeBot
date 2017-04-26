@@ -15,9 +15,8 @@ unsigned long timeout = 0;
 unsigned int encoder_reset = 0;
 
 // Target and previous velocity arrays
-static int target_vel1, target_vel2;
-static int target_vel[2];
-static int prev_vel[2];
+static char action;
+static int steps;
 
 void serial()
 {
@@ -45,16 +44,14 @@ void serial()
       {
         // Parse string being read
         // Left motor, right motor, reset encoders
-        
-        
+
+
         // Was originally:
         //sscanf(s, "[%d %d]\n", &target_vel[0], &target_vel[1]);
         //but for some reason this crashes code in 1.8.2, but not 1.6.8
 
-        
-        sscanf(s, "[%d %d]\n", &target_vel1, &target_vel2);
-        target_vel[0] = target_vel1;
-        target_vel[1] = target_vel2;
+
+        sscanf(s, "[%c %d]\n", &action, &steps);
         timeout = millis();
       }
       memmove(buf, &e[1], strlen(&e[1]) + sizeof(char));
@@ -76,14 +73,13 @@ void serial()
   {
     for (int i = 0; i < 4; i++)
     {
-    sprintf(write_buffer, "[%d %d %d]\n",
+    sprintf(write_buffer, "[%d %c %d]\n",
         DEV_ID,
-        prev_vel[0],
-        prev_vel[1]);
+        action,
+        steps);
     Serial.print(write_buffer);
     msecs = millis();
     }
   }
-  
-}
 
+}
