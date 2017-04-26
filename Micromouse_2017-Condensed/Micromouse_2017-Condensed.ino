@@ -40,15 +40,15 @@
 #define LeftB 3
 
 // Sensor pin assignments  - Changed rear left & front left pin assignments
-#define rearLeftSensor   23 
-#define rearRightSensor  22 
+#define rearLeftSensor   23
+#define rearRightSensor  22
 
 //Front Left sensor
-#define frontRightSensor 15 
+#define frontRightSensor 15
 //Front right sensor
 #define frontLeftSensor  16
 
-int Spd = 50; // Sets speed to drive robot straight
+int Spd = 150; // Sets speed to drive robot straight
 
 //Encoder Objects
 Encoder encRight(RightA, RightB);
@@ -56,21 +56,22 @@ Encoder encLeft(LeftA, LeftB);
 
 //PID
 float prevPID;
+float total;
 
 float prevEnc;
-static float Kp = 0.3, Ki = .075, Kd = .075;    //PID constants using encoders to drive straight
+static float Kp = 0.3, Ki = .0075, Kd = .0075;    //PID constants using encoders to drive straight
 static float error, P, I,  D;      // error variables
-float total; //Keeps track of total PID Error using encdoers
+float total_Enc; //Keeps track of total PID Error using encdoers
 
 //IR Centering
 float prevIR;
-static float KpIR = .25, KiIR = 0, KdIR = 0;   //PID constants using IR to drive straight
+static float KpIR = .015, KiIR = 0, KdIR = 0;   //PID constants using IR to drive straight
 static float errorIR, P_IR, I_IR, D_IR;      // error variables
 float total_IR; //Keeps track of total PID error using IR
 
 //Angle Correction
 float prevA;
-static float KpA = 0, KiA = 0, KdA = 0;   //PID constants using IR to drive straight
+static float KpA = .1, KiA = 0, KdA = 0;   //PID constants using IR to drive straight
 static float errorA, P_A, I_A, D_A;      // error variables
 float total_A; //Keeps track of total PID error using IR
 
@@ -148,11 +149,11 @@ SensorV2 frontLeft;
 SensorV2 rearRight;
 SensorV2 frontRight;
 /* Implements the Moving Avg Filter
- *  Because we have the sum of the buffer in a variable 
+ *  Because we have the sum of the buffer in a variable
  *  we can update the avg when a new Input
 */
 int updateAvg(struct SensorV2 *sensor, int current, int counter)
-{  
+{
   int temp = sensor->prevValues[counter % CAPACITY]; // Value in buffer that will be replaced
   sensor->prevValues[counter % CAPACITY] = current;
   sensor->sum += -temp + current;
@@ -160,7 +161,7 @@ int updateAvg(struct SensorV2 *sensor, int current, int counter)
 }
 // overloading updateAvg to work with avg
 /*int updateAvg(struct UltraSensor *sensor, float current, float counter)
-{  
+{
   float temp = sensor->prevValues[counter % CAPACITY]; // Value in buffer that will be replaced
   sensor->prevValues[counter % CAPACITY] = current;
   sensor->sum += -temp + current;
@@ -173,7 +174,7 @@ int distRearRight;
 int distFrontLeft;
 int distFrontRight;
 
-int counter = 0;    
+int counter = 0;
 double BLa = 0.0001;
 double BLb = -0.0695;
 double BLc = 16.4856;
@@ -222,7 +223,7 @@ void setDirection(bool dirL, bool dirR)
   if (dirL == false)
   {
     digitalWrite(Left.IN2, LOW);
-    digitalWrite(Left.IN1, HIGH); 
+    digitalWrite(Left.IN1, HIGH);
   }
   else
   {
@@ -257,42 +258,44 @@ void setSpeed(int lSpd, int rSpd)
   analogWrite(Right.PWM, rSpd);
 }
 
+int pidSampleRate = 40;
 void driveStraight()
 {
 
   stopMotor(); //Stops motors
   setDirection(true, true);  //Sets direction of Motors to run forward
 
-  if((millis()-prevPID)>100){
+  if((millis()-prevPID)>=pidSampleRate){
 
     //Drive Straight
     error = encL - encR; //Using number of ticks as error
-    P = error * Kp; //Proprotional Error
-    I = (I + error) * Ki; //Integral/Accumulated Error
-    D = (error - prevEnc) * Kd;
+    P = error; //Proprotional Error
+    I = I + (error); //Integral/Accumulated Error
+    D = error - prevEnc;
     prevEnc = error;
-    total = P + I + D;
+    total_Enc = P * Kp + I * Ki + D * Kd;
 
     //Center between walls
-    errorIR = (rRightFiltered - rLeftFiltered) + (fRightFiltered - fLeftFiltered);
-    P_IR = errorIR *KpIR;
-    I_IR = (errorIR + I_IR) * KiIR;
-    D_IR = (errorIR - prevIR) * KdIR;
+    errorIR =  (fRightFiltered - fLeftFiltered) + (rRightFiltered - rLeftFiltered);
+    P_IR = errorIR;
+    I_IR = I_IR + (errorIR);
+    D_IR = errorIR - prevIR;
     prevIR = errorIR;
-    total_IR = P_IR + I_IR + D_IR;
+    total_IR = P_IR * KpIR + I_IR * KiIR + D_IR * KdIR;
 
     //Angle Correction
     errorA = ((fLeftFiltered - rLeftFiltered) - (fRightFiltered - rRightFiltered))*-1;
-    P_A = errorA * KpA;
-    I_A = (errorA + I_A) * KiA;
-    D_A = (errorA - prevA) * KdA;
+    P_A = errorA;
+    I_A = I_A + (errorA);
+    D_A = errorA - prevA;
     prevA = errorA;
-    total_A = P_A + I_A + D_A;
-    
-    
+    total_A = P_A * KpA + I_A * KiA + D_A * KdA;
+
+    total = constrain((int)(total_IR + total_A) + Spd,0,255);
+
     //Sets speed of motors based on total error
     //setSpeedRight(right, Spd - total);  -- This PID should adjuct proportional to the right wheel
-    setSpeed(Spd, (int)(Spd + total + total_IR));
+    setSpeed(Spd, total);
     prevPID = millis();
   }
 }
@@ -303,7 +306,7 @@ void turn(bool dir, int degree)
     resetEncoders();
     long ticksPerRotationLeft;
     long ticksPerRotationRight;
-    
+
     if(degree == 90){
     int ticksPerRotationLeft = 310; //Number of encoder ticks in a 90 degree rotation
     int ticksPerRotationRight = -270;
@@ -353,8 +356,8 @@ void setup()
   pinMode(rearLeftSensor,INPUT);
   pinMode(frontLeftSensor,INPUT);
   pinMode(rearRightSensor, INPUT);
-  pinMode(frontRightSensor,INPUT); 
-  
+  pinMode(frontRightSensor,INPUT);
+
   digitalWrite(STBY, HIGH); // Third enable for Motors, STANDBY = LOW -> motor don't run
 
   Serial.begin(9600);
@@ -398,6 +401,5 @@ void debug(){
   Serial.print(" front right: ");
   Serial.print(fRightFiltered);
   Serial.print("IRERROR:   ");
-  Serial.println(errorIR);
+  Serial.println(total_A);
 }
-
