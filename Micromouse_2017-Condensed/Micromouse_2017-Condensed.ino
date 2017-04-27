@@ -48,7 +48,7 @@
 //Front right sensor
 #define frontLeftSensor  16
 
-int Spd = 150; // Sets speed to drive robot straight
+int Spd = 75; // Sets speed to drive robot straight
 
 //Encoder Objects
 Encoder encRight(RightA, RightB);
@@ -291,6 +291,43 @@ void driveStraight()
     prevA = errorA;
     total_A = P_A * KpA + I_A * KiA + D_A * KdA;
 
+    total = constrain((int)(total_Enc) + Spd,0,255);
+
+    //Sets speed of motors based on total error
+    //setSpeedRight(right, Spd - total);  -- This PID should adjuct proportional to the right wheel
+    setSpeed(Spd, total);
+    prevPID = millis();
+  }
+}
+void driveBtwnWalls(){
+  setDirection(true, true);  //Sets direction of Motors to run forward
+
+  if((millis()-prevPID)>=pidSampleRate){
+
+    //Drive Straight
+    error = encL - encR; //Using number of ticks as error
+    P = error; //Proprotional Error
+    I = I + (error); //Integral/Accumulated Error
+    D = error - prevEnc;
+    prevEnc = error;
+    total_Enc = P * Kp + I * Ki + D * Kd;
+
+    //Center between walls
+    errorIR =  (fRightFiltered - fLeftFiltered) + (rRightFiltered - rLeftFiltered);
+    P_IR = errorIR;
+    I_IR = I_IR + (errorIR);
+    D_IR = errorIR - prevIR;
+    prevIR = errorIR;
+    total_IR = P_IR * KpIR + I_IR * KiIR + D_IR * KdIR;
+
+    //Angle Correction
+    errorA = ((fLeftFiltered - rLeftFiltered) - (fRightFiltered - rRightFiltered))*-1;
+    P_A = errorA;
+    I_A = I_A + (errorA);
+    D_A = errorA - prevA;
+    prevA = errorA;
+    total_A = P_A * KpA + I_A * KiA + D_A * KdA;
+
     total = constrain((int)(total_IR + total_A) + Spd,0,255);
 
     //Sets speed of motors based on total error
@@ -365,6 +402,26 @@ void setup()
   delay(1000);
 }
 
+double encodersToDistance()
+{
+  //Constants
+  double ticksPerRotationRight = -615; //Ticks to rotate forward
+  double ticksPerRotationLeft = 615; //Ticks to rotate forward
+  double wheelDiameter = 40.15; //40.15mm
+
+  //Calculations
+  double circumference = 3.14152965*wheelDiameter;
+
+  double distanceR = abs(encR*circumference/ticksPerRotationRight);
+  double distanceL = abs(encL*circumference/ticksPerRotationLeft);
+
+  double distance = (distanceR + distanceL)/2;
+
+
+  return distance;
+
+}
+
 void loop()
 {
   /*READ ENCODERS*/
@@ -373,7 +430,14 @@ void loop()
   encL = encLeft.read();
   /*DRIVE IN STRAIGHT LINE*/
   //Drives robot straight at speed Spd
-  driveStraight();
+  if((encodersToDistance()/10) < 18){
+    driveStraight();
+  }else{
+    setSpeed(0,0);
+  }
+  if((encodersToDistance()/10) >17 && (encodersToDistance()/10) <18 && ((int)encodersToDistance()%2) ==0){
+    Spd -= 10;
+  }
   readIR();
   filterIR();
   ping();
@@ -401,5 +465,7 @@ void debug(){
   Serial.print(" front right: ");
   Serial.print(fRightFiltered);
   Serial.print("IRERROR:   ");
-  Serial.println(total_A);
+  Serial.print(total_A);
+  Serial.print("Dist Trav:  ");
+  Serial.println(encodersToDistance()/10);
 }
